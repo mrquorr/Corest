@@ -15,50 +15,48 @@
  *
  * =====================================================================================
  */
+#include <math.h>
 #include <stdlib.h>
 #include <ncurses.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <iostream>
 #include <vector>
+#include <fstream>
+#include <istream>
 #include <time.h>
+#include <string>
+#include <sstream>
 
+#define THNUM = 8
 using namespace std;
-
-//typedef struct {
-//    long start;
-//    long end;
-//} Offset;
-//#define dimM 1000
-//#define USED 8
-//
-//float matA[dimM][dimM];
-//float matB[dimM][dimM];
-//float matC[dimM][dimM];
 
 //Tuples
 int *tupleClass;
-int *tupleUse;
 double **tupleVariable;
-int tupleCount = 5;
+int tupCount = 20000;
 int varCount = 16;
 
+//Used by each thread
+int *tupleUse; //only relevant during training
+int *curNodeY;
+int *curNodeX;
 //Tree
-int maxTrees = 5;
-int curNodeY = 0;
-int curNodeX = 0;
-int **varUsed;
-int **objectClass;
-int **isLeaf;
-double **threshold;
-int usedVariables;
-int usedTuples;
-double trainingSetPercentage = 0.8;
-double varSetPercentage = 0.6;
-int minSampleCount = 10;
-int maxDepth = 10;
+//int trees = 5;
+////nodes
+//int **varUsed;
+//int **objectClass;
+//int **isLeaf;
+//double **threshold;
+////options
+//int usedVariables;
+//int usedTuples;
+//double trainingSetPercentage = 0.8;
+//double varSetPercentage = 0.6;
+//int minSampleCount = 10;
+//int maxDepth = 10;
 
-static bool
+void
 read_tuples( const string& filename){
     // initialize tuple data structure
     // tupleUse: flags for which tuples are used
@@ -68,46 +66,33 @@ read_tuples( const string& filename){
     // tupleCount: (columns) amount of examples used
 
     int i, j;
-    tupleUse = (int *) malloc(sizeof(int) * tupleCount);
-    tupleClass = (int *) malloc(sizeof(int) * tupleCount);
-    tupleVariable = (double **) malloc(sizeof(double *) * tupleCount);
-    for( i = 0; i < tupleCount; i++){
-        tupleVariable[i] = (double *) malloc(sizeof(double) * varCount);
+    tupleUse = new int[tupCount];
+    tupleClass = new int[tupCount];
+    tupleVariable = new double*[tupCount];
+    for( i = 0; i < tupCount; i++){
+        tupleVariable[i] = new double[varCount];
     }
-    // testing ---------
-    for( i = 0; i < tupleCount; i++){
+
+    ifstream myfile(filename);
+    string temp;
+
+    i = 0;
+    while(getline(myfile, temp)){
+        tupleClass[i] = temp[0] - 'A';
         tupleUse[i] = 1;
-        tupleClass[i] = 'Z' - 'A';
-        for( j = 0; j < varCount; j++){
-          tupleVariable[i][j] = 3.0;
+
+        //remove the first char
+        temp = temp.substr(2, temp.size());
+
+        char split_char = ',';
+        istringstream split(temp);
+        j = 0;
+        for(string each; getline(split, each, split_char); j++){
+            tupleVariable[i][j] = stod(each);
         }
+
+        i++;
     }
-    // -----------------
-
-    //FILE* f = fopen( filename.c_str(), "rt" );
-    //if( !f ){
-    //    cout << "Could not read the database " << filename << endl;
-    //    return false;
-    //}
-
-    //for( i = 0; i < tuple_count; i++)
-    //{
-    //    char* ptr;
-    //    if( !fgets( buf, M, f ) || !strchr( buf, ',' ) )
-    //        break;
-    //    responses.push_back((int)buf[0]);
-    //    ptr = buf+2;
-    //    for( i = 0; i < var_count; i++ )
-    //    {
-    //        int n = 0;
-    //        sscanf( ptr, "%f%n", &el_ptr.at<float>(i), &n );
-    //        ptr += n + 1;
-    //    }
-    //    if( i < var_count )
-    //        break;
-    //    _data->push_back(el_ptr);
-    //}
-    //fclose(f);
 }
 
 void
@@ -132,56 +117,87 @@ void
   return NULL;
 }
 
-double
-informationGained(t, x){
-  e = entropy(t);
-  ce = conditional_entropy(t, x);
-  return(e - ce);
-}
+//double
+//informationGained(t, x){
+//  e = entropy(t);
+//  ce = conditional_entropy(t, x);
+//  return(e - ce);
+//}
+//
+//double
+//entropy(){
+//    int i;
+//    double sum = 0.0;
+//    for( i = 0; i < usedVariables; i++){
+//        sum += 
+//    }
+//}
+//
+//double
+//logTwo(double x){
+//  return (log(x)/log(x));
+//}
 
 int main() {
-    int i, j, index;
-    // calculate number of used variables for each tree
-    usedVariables = varCount * varSetPercentage;
-    // calculate number of the training set (tuples) for each tree
-    usedTuples = tupleCount * trainingSetPercentage;
+    read_tuples("letter.data");
 
-    // individual tree training
-    int *classCount;
-
-    classCount = (int *) malloc(sizeof(int) * varCount);
-
-    // choosing which tuples to use for bagging
-    for ( i = 0; i < usedTuples; i++ ){
-        srand(time(NULL));
-        index = rand() % tupleCount;
-        if( !tupleUse[index] )
-          i--;
-        tupleUse[index] = 0;
-    }
-    // choosing which variable subset to use
-    for ( i = 0; i < usedVariables; i++ ){
-        srand(time(NULL));
-        index = rand() % tupleCount;
-        if( !tupleUse[index] )
-          i--;
-        tupleUse[index] = 0;
-    }
-    //count all classes
-    for ( i = 0; i < varCount; i++ ){
-        classCount[i] = 0;
-    }
-    for ( i = 0; i < tupleCount; i++ ){
-        if(tupleUse[i]){
-          // if the tuple is used on this tree, add its class to classCount
-          classCount[ tupleClass[i] ]++;
-        }
-    }
-    for ( i = 0; i < varCount; i++){
-      if(tupleUse[i]){
-        
+    for(int i = 0; i < 100; i++){
+      printf("Tuple #: %d has class %c [", i, tupleClass[i]+'A');
+      for(int j = 0; j < varCount; j++){
+        printf("%.1f, ", tupleVariable[i][j]);
       }
+      printf("]\n");
     }
+
+    for(int i = 300; i < 400; i++){
+      printf("Tuple #: %d has class %c [", i, tupleClass[i]+'A');
+      for(int j = 0; j < varCount; j++){
+        printf("%.1f, ", tupleVariable[i][j]);
+      }
+      printf("]\n");
+    }
+    //int i, j, index;
+    //// calculate number of used variables for each tree
+    //usedVariables = varCount * varSetPercentage;
+    //// calculate number of the training set (tuples) for each tree
+    //usedTuples = tupleCount * trainingSetPercentage;
+
+    //// individual tree training
+    //int *classCount;
+
+    //classCount = (int *) malloc(sizeof(int) * varCount);
+
+    //// choosing which tuples to use for bagging
+    //for ( i = 0; i < usedTuples; i++ ){
+    //    srand(time(NULL));
+    //    index = rand() % tupleCount;
+    //    if( !tupleUse[index] )
+    //      i--;
+    //    tupleUse[index] = 0;
+    //}
+    //// choosing which variable subset to use
+    //for ( i = 0; i < usedVariables; i++ ){
+    //    srand(time(NULL));
+    //    index = rand() % tupleCount;
+    //    if( !tupleUse[index] )
+    //      i--;
+    //    tupleUse[index] = 0;
+    //}
+    ////count all classes
+    //for ( i = 0; i < varCount; i++ ){
+    //    classCount[i] = 0;
+    //}
+    //for ( i = 0; i < tupleCount; i++ ){
+    //    if(tupleUse[i]){
+    //      // if the tuple is used on this tree, add its class to classCount
+    //      classCount[ tupleClass[i] ]++;
+    //    }
+    //}
+    //for ( i = 0; i < varCount; i++){
+    //  if(tupleUse[i]){
+    //    
+    //  }
+    //}
   //int i, j, k;
   //float acumD;
   //float *tempDA, *tempDB;
