@@ -28,33 +28,36 @@
 #include <string>
 #include <sstream>
 
-#define THNUM = 8
+#define THNUM 1
 using namespace std;
 
-//Tuples
+//Tuples SHARED
 int *tupleClass;
 double **tupleVariable;
 int tupCount = 20000;
 int varCount = 16;
+int classes = 26;
 
-//Used by each thread
-int *tupleUse; //only relevant during training
+//Used by each training thread
+int **tupleUse; //only relevant during training?
+int **variableUse; //only relevant during training?
+int **classCount;
 int *curNodeY;
 int *curNodeX;
 //Tree
-//int trees = 5;
-////nodes
-//int **varUsed;
-//int **objectClass;
-//int **isLeaf;
-//double **threshold;
-////options
-//int usedVariables;
-//int usedTuples;
-//double trainingSetPercentage = 0.8;
-//double varSetPercentage = 0.6;
-//int minSampleCount = 10;
-//int maxDepth = 10;
+int trees = 5;
+//nodes
+int **varUsed;
+int **objectClass;
+int **isLeaf;
+double **threshold;
+//options
+int usedVariableAmount;
+int usedTupleAmount;
+double tupSetPercentage = 0.8;
+double varSetPercentage = 0.6;
+int minSampleCount = 10;
+int maxDepth = 10;
 
 void
 read_tuples( const string& filename){
@@ -66,7 +69,6 @@ read_tuples( const string& filename){
     // tupleCount: (columns) amount of examples used
 
     int i, j;
-    tupleUse = new int[tupCount];
     tupleClass = new int[tupCount];
     tupleVariable = new double*[tupCount];
     for( i = 0; i < tupCount; i++){
@@ -79,7 +81,6 @@ read_tuples( const string& filename){
     i = 0;
     while(getline(myfile, temp)){
         tupleClass[i] = temp[0] - 'A';
-        tupleUse[i] = 1;
 
         //remove the first char
         temp = temp.substr(2, temp.size());
@@ -123,81 +124,90 @@ void
 //  ce = conditional_entropy(t, x);
 //  return(e - ce);
 //}
-//
-//double
-//entropy(){
-//    int i;
-//    double sum = 0.0;
-//    for( i = 0; i < usedVariables; i++){
-//        sum += 
-//    }
-//}
-//
-//double
-//logTwo(double x){
-//  return (log(x)/log(x));
-//}
+
+double
+entropy(){
+    int i;
+    double sum = 0.0;
+    for( i = 0; i < usedVariableAmount; i++){
+        sum += 1;
+    }
+}
+
+double
+logTwo(double x){
+  return (log(x)/log(x));
+}
+
+void reset_thread(int threadNum){
+    int i, index;
+    //erase tupleUse, variableUse, classCount
+    for( i = 0; i < tupCount; i++){
+        tupleUse[threadNum][i] = 1;
+    }
+    for( i = 0; i < varCount; i++){
+        variableUse[threadNum][i] = 1;
+    }
+    for ( i = 0; i < classes; i++ ){
+        classCount[threadNum][i] = 0;
+    }
+    //make random selection of tupeUse, variableUse
+    //count each class into classCount
+    for ( i = 0; i < usedTupleAmount; i++ ){ // choosing which tuples to use for bagging
+        srand(time(NULL));
+        index = rand() % tupCount;
+        if( !tupleUse[threadNum][index] )
+          i--;
+        tupleUse[threadNum][index] = 0;
+    }
+    for ( i = 0; i < usedVariableAmount; i++ ){ // choosing which variable subset to use
+        srand(time(NULL));
+        index = rand() % tupCount;
+        if( !variableUse[threadNum][index] )
+          i--;
+        variableUse[threadNum][index] = 0;
+    }
+    for ( i = 0; i < tupCount; i++ ){
+        if(tupleUse[i]){
+          // if the tuple is used on this tree, add its class to classCount
+          classCount[threadNum][tupleClass[i]]++;
+        }
+    }
+}
 
 int main() {
+    int i, j, index;
     read_tuples("letter.data");
 
-    for(int i = 0; i < 100; i++){
-      printf("Tuple #: %d has class %c [", i, tupleClass[i]+'A');
-      for(int j = 0; j < varCount; j++){
-        printf("%.1f, ", tupleVariable[i][j]);
-      }
-      printf("]\n");
+    //////////////////////////////
+    // initialization
+    tupleUse = new int*[THNUM];
+    for( i = 0; i < THNUM; i++){
+        tupleUse[i] = new int[tupCount];
     }
-
-    for(int i = 300; i < 400; i++){
-      printf("Tuple #: %d has class %c [", i, tupleClass[i]+'A');
-      for(int j = 0; j < varCount; j++){
-        printf("%.1f, ", tupleVariable[i][j]);
-      }
-      printf("]\n");
+    variableUse = new int*[THNUM];
+    for( i = 0; i < THNUM; i++){
+        variableUse[i] = new int[varCount];
     }
-    //int i, j, index;
-    //// calculate number of used variables for each tree
-    //usedVariables = varCount * varSetPercentage;
-    //// calculate number of the training set (tuples) for each tree
-    //usedTuples = tupleCount * trainingSetPercentage;
+    classCount = new int*[THNUM];
+    for( i = 0; i < THNUM; i++){
+        variableUse[i] = new int[classes];
+    }
+    usedVariableAmount = varCount * varSetPercentage; // calculate number of used variables for each tree
+    usedTupleAmount = tupCount * tupSetPercentage;    // calculate number of the training set (tuples) for each tree
+    //////////////////////////////
 
-    //// individual tree training
-    //int *classCount;
+    //////////////////////////////
+    // individual tree training
+    reset_thread(0);
+    //////////////////////////////
 
-    //classCount = (int *) malloc(sizeof(int) * varCount);
 
-    //// choosing which tuples to use for bagging
-    //for ( i = 0; i < usedTuples; i++ ){
-    //    srand(time(NULL));
-    //    index = rand() % tupleCount;
-    //    if( !tupleUse[index] )
-    //      i--;
-    //    tupleUse[index] = 0;
-    //}
-    //// choosing which variable subset to use
-    //for ( i = 0; i < usedVariables; i++ ){
-    //    srand(time(NULL));
-    //    index = rand() % tupleCount;
-    //    if( !tupleUse[index] )
-    //      i--;
-    //    tupleUse[index] = 0;
-    //}
-    ////count all classes
-    //for ( i = 0; i < varCount; i++ ){
-    //    classCount[i] = 0;
-    //}
-    //for ( i = 0; i < tupleCount; i++ ){
-    //    if(tupleUse[i]){
-    //      // if the tuple is used on this tree, add its class to classCount
-    //      classCount[ tupleClass[i] ]++;
-    //    }
-    //}
-    //for ( i = 0; i < varCount; i++){
-    //  if(tupleUse[i]){
-    //    
-    //  }
-    //}
+    for ( i = 0; i < varCount; i++){
+      if(tupleUse[i]){
+        
+      }
+    }
   //int i, j, k;
   //float acumD;
   //float *tempDA, *tempDB;
